@@ -83,17 +83,17 @@ export function planWindowActions(tabs, toggleState) {
   const toUngroup = [];
 
   for (const [domain, tabsForDomain] of domainToTabs) {
-    const isLocal = domain === LOCAL_FILES_GROUP;
-    const isOn = !!toggleState[domain];
+    // ローカルファイルはトグルに関係なく常にON扱い
+    const isOn = domain === LOCAL_FILES_GROUP || !!toggleState[domain];
     const hasMultiple = tabsForDomain.length >= 2;
 
-    if (isLocal || (isOn && hasMultiple)) {
+    if (isOn && hasMultiple) {
       // グループ化対象
       toGroup.push({ domain, tabIds: tabsForDomain.map((t) => t.id) });
-    } else if (isOn && !hasMultiple) {
-      // ON だが1タブのみ → 既存グループはそのまま維持（何もしない）
     } else {
-      // OFF → 現在グループに属しているタブのみ解除対象にする
+      // OFF、または2タブ未満 → 現在グループに属しているタブのみ解除対象にする。
+      // 単独タブのグループを残すと、そのタブを閉じた時にChromeの「保存済みタブグループ」へ
+      // 閉じたグループとして残り続けるため、解除（＝保存済みグループごと削除）しておく。
       for (const t of tabsForDomain) {
         if (t.groupId !== undefined && t.groupId !== TAB_GROUP_ID_NONE) {
           toUngroup.push(t.id);
@@ -103,6 +103,30 @@ export function planWindowActions(tabs, toggleState) {
   }
 
   return { toGroup, toUngroup };
+}
+
+// ドメインに対応するグループのタイトル。
+export function groupTitleFor(domain) {
+  return domain === LOCAL_FILES_GROUP ? '📁 Local Files' : domain;
+}
+
+// ウィンドウ内の既存グループから、同じタイトルで再利用できるグループを選ぶ。
+// 新規作成のたびに保存済みタブグループが増えるのを防ぐため、作成より再利用を優先する。
+// 同名が複数ある場合は対象タブを最も多く含むものを選ぶ。該当なしは null。
+export function findReusableGroup(groups, title, domainTabs) {
+  let best = null;
+  let bestCount = -1;
+  for (const group of groups) {
+    if (group.title !== title) {
+      continue;
+    }
+    const count = domainTabs.filter((t) => t.groupId === group.id).length;
+    if (count > bestCount) {
+      best = group;
+      bestCount = count;
+    }
+  }
+  return best;
 }
 
 // 既に使われている色を避けて新しいグループ色を選ぶ。

@@ -10,6 +10,8 @@ import {
   planWindowActions,
   pickColor,
   findDomainByGroupId,
+  groupTitleFor,
+  findReusableGroup,
 } from '../logic.js';
 
 // --- getFullDomain ---------------------------------------------------------
@@ -98,11 +100,18 @@ test('planWindowActions: ONかつ2タブ以上はグループ化対象', () => {
   assert.deepEqual(toUngroup, []);
 });
 
-test('planWindowActions: ONでも1タブのみは何もしない', () => {
+test('planWindowActions: ONでも1タブのみでグループ外なら何もしない', () => {
   const tabs = [{ id: 1, url: 'https://a.com/1', groupId: -1 }];
   const { toGroup, toUngroup } = planWindowActions(tabs, { 'a.com': true });
   assert.deepEqual(toGroup, []);
   assert.deepEqual(toUngroup, []);
+});
+
+test('planWindowActions: ONで1タブに減ったグループ中のタブは解除対象', () => {
+  const tabs = [{ id: 1, url: 'https://a.com/1', groupId: 10 }];
+  const { toGroup, toUngroup } = planWindowActions(tabs, { 'a.com': true });
+  assert.deepEqual(toGroup, []);
+  assert.deepEqual(toUngroup, [1]);
 });
 
 test('planWindowActions: OFFかつグループ中のタブは解除対象', () => {
@@ -124,10 +133,20 @@ test('planWindowActions: OFFでグループに属していないタブは解除�
   assert.deepEqual(toUngroup, []);
 });
 
-test('planWindowActions: LOCAL_FILES_GROUP はトグルに関係なく常にグループ化', () => {
-  const tabs = [{ id: 1, url: 'file:///a.html', groupId: -1 }];
+test('planWindowActions: LOCAL_FILES_GROUP はトグルに関係なく2タブ以上でグループ化', () => {
+  const tabs = [
+    { id: 1, url: 'file:///a.html', groupId: -1 },
+    { id: 2, url: 'file:///b.html', groupId: -1 },
+  ];
   const { toGroup } = planWindowActions(tabs, {});
-  assert.deepEqual(toGroup, [{ domain: LOCAL_FILES_GROUP, tabIds: [1] }]);
+  assert.deepEqual(toGroup, [{ domain: LOCAL_FILES_GROUP, tabIds: [1, 2] }]);
+});
+
+test('planWindowActions: LOCAL_FILES_GROUP も1タブに減ったら解除対象', () => {
+  const tabs = [{ id: 1, url: 'file:///a.html', groupId: 10 }];
+  const { toGroup, toUngroup } = planWindowActions(tabs, {});
+  assert.deepEqual(toGroup, []);
+  assert.deepEqual(toUngroup, [1]);
 });
 
 test('planWindowActions: 無効なURLのタブは無視する', () => {
@@ -176,4 +195,40 @@ test('findDomainByGroupId: グループIDからドメインを逆引きする', 
   };
   assert.equal(findDomainByGroupId(winState, 20), 'b.com');
   assert.equal(findDomainByGroupId(winState, 99), null);
+});
+
+// --- groupTitleFor ---------------------------------------------------------
+
+test('groupTitleFor: ドメインはそのまま、ローカルファイルは専用表記', () => {
+  assert.equal(groupTitleFor('a.com'), 'a.com');
+  assert.equal(groupTitleFor(LOCAL_FILES_GROUP), '📁 Local Files');
+});
+
+// --- findReusableGroup -----------------------------------------------------
+
+test('findReusableGroup: 同じタイトルの既存グループを返す', () => {
+  const groups = [
+    { id: 10, title: 'b.com' },
+    { id: 20, title: 'a.com' },
+  ];
+  const tabs = [{ id: 1, groupId: -1 }];
+  assert.equal(findReusableGroup(groups, 'a.com', tabs)?.id, 20);
+});
+
+test('findReusableGroup: 該当タイトルがなければnull', () => {
+  const groups = [{ id: 10, title: 'b.com' }];
+  assert.equal(findReusableGroup(groups, 'a.com', []), null);
+});
+
+test('findReusableGroup: 同名が複数あれば対象タブを最も多く含むものを返す', () => {
+  const groups = [
+    { id: 10, title: 'a.com' },
+    { id: 20, title: 'a.com' },
+  ];
+  const tabs = [
+    { id: 1, groupId: 20 },
+    { id: 2, groupId: 20 },
+    { id: 3, groupId: 10 },
+  ];
+  assert.equal(findReusableGroup(groups, 'a.com', tabs)?.id, 20);
 });

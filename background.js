@@ -1,9 +1,10 @@
 import {
-  LOCAL_FILES_GROUP,
   getFullDomain,
   planWindowActions,
   pickColor,
   findDomainByGroupId,
+  groupTitleFor,
+  findReusableGroup,
 } from './logic.js';
 
 // タブイベント連発時にフル走査が多重実行されるのを防ぐデバウンス時間(ms)
@@ -110,9 +111,21 @@ async function groupTabsByDomain() {
       .map((s) => s.color)
       .filter(Boolean);
 
+    // 再利用候補となる既存グループ（解除処理の後に取得し、消えたグループを含めない）
+    const windowGroups =
+      toGroup.length > 0 ? await chrome.tabGroups.query({ windowId }) : [];
+
     for (const { domain, tabIds } of toGroup) {
       try {
-        await applyGroup(domain, tabIds, tabs, newWinState, usedColors);
+        await applyGroup({
+          domain,
+          tabIds,
+          windowId,
+          windowTabs: tabs,
+          windowGroups,
+          newWinState,
+          usedColors,
+        });
       } catch (e) {
         console.error(`グループ化に失敗しました: ${domain} -`, e);
       }
@@ -126,23 +139,59 @@ async function groupTabsByDomain() {
 }
 
 // 1ドメイン分のグループ化を適用し、newWinStateを更新する。
-async function applyGroup(domain, tabIds, windowTabs, newWinState, usedColors) {
+// 新規作成のたびにChromeの保存済みタブグループが増えるため、
+// 記憶済みグループ → 同名の既存グループ → 新規作成 の順で使う。
+async function applyGroup({
+  domain,
+  tabIds,
+  windowId,
+  windowTabs,
+  windowGroups,
+  newWinState,
+  usedColors,
+}) {
   let groupId = newWinState[domain]?.id;
   let color = newWinState[domain]?.color;
   let collapsed = newWinState[domain]?.collapsed;
+  const title = groupTitleFor(domain);
+  const tabIdSet = new Set(tabIds);
 
-  // 保存済みのグループIDが今も有効か確認する
+  // 記憶済みのグループIDが今も有効で、同じウィンドウにあるか確認する
   if (groupId != null) {
     try {
-      await chrome.tabGroups.get(groupId);
+      const group = await chrome.tabGroups.get(groupId);
+      if (group.windowId !== windowId) {
+        groupId = null;
+      }
     } catch {
-      groupId = null; // 既に存在しない → 新規作成へフォールバック
+      groupId = null; // 既に存在しない → 再利用・新規作成へフォールバック
+    }
+  }
+
+  // 記憶がない（ブラウザ再起動後など）場合は、同名の既存グループを再利用する
+  if (groupId == null) {
+    const claimedIds = new Set(
+      Object.entries(newWinState)
+        .filter(([d]) => d !== domain)
+        .map(([, s]) => s.id)
+    );
+    const reusable = findReusableGroup(
+      windowGroups.filter((g) => !claimedIds.has(g.id)),
+      title,
+      windowTabs.filter((t) => tabIdSet.has(t.id))
+    );
+    if (reusable) {
+      groupId = reusable.id;
+      color = reusable.color;
+      collapsed = reusable.collapsed;
+      if (!usedColors.includes(color)) {
+        usedColors.push(color);
+      }
     }
   }
 
   if (groupId != null) {
     // 既存グループにまだ属していないタブだけを追加（無駄なAPI呼び出しを避ける）
-    const tabIdSet = new Set(tabIds);
     const tabIdsToAdd = windowTabs
       .filter((t) => tabIdSet.has(t.id) && t.groupId !== groupId)
       .map((t) => t.id);
@@ -150,12 +199,12 @@ async function applyGroup(domain, tabIds, windowTabs, newWinState, usedColors) {
       await chrome.tabs.group({ tabIds: tabIdsToAdd, groupId });
     }
   } else {
-    // 新規グループを作成し、名前・色・開閉状態を初期化
-    groupId = await chrome.tabs.group({ tabIds });
+    // 新規グループを作成し、名前・色・開閉状態を初期化。
+    // windowId を省略すると「現在のウィンドウ」に作られ、他ウィンドウのタブが移動してしまう
+    groupId = await chrome.tabs.group({ tabIds, createProperties: { windowId } });
     color = pickColor(usedColors);
     usedColors.push(color);
     collapsed = false;
-    const title = domain === LOCAL_FILES_GROUP ? '📁 Local Files' : domain;
     await chrome.tabGroups.update(groupId, { title, color, collapsed });
   }
 
