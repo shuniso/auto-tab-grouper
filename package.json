@@ -1,6 +1,6 @@
 {
   "name": "auto-tab-grouper",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "同一ドメインのタブを自動でグループ化するChrome拡張機能",
   "type": "module",
   "private": true,
