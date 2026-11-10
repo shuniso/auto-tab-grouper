@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Auto Domain Grouper",
-  "version": "0.7",
+  "version": "0.7.0",
   "description": "同一ドメインのタブを自動でグループ化します。",
   "permissions": [
     "tabs",

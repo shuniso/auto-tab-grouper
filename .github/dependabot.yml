@@ -1,0 +1,7 @@
+version: 2
+updates:
+  # SHA 固定したアクションの更新 PR を自動で作る
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

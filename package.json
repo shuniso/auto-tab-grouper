@@ -5,7 +5,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "package": "scripts/package.sh"
   },
   "license": "MIT"
 }

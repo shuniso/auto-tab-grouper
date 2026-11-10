@@ -30,6 +30,20 @@ Chromeはタブグループを自動保存し、グループのタブを閉じ�
 
 依存ゼロ（Node.js標準テストランナー）: `node --test`
 
+## リリース
+
+`v*` タグを push すると、GitHub Actions がテスト後に配布用 zip を作成し、GitHub Release に添付する。
+
+1. `manifest.json` と `package.json` の `version` を同じ値に上げて `main` に push
+2. タグを作成して push（タグは `v` + `manifest.json` の `version`。一致しないとリリースは失敗する）
+
+   ```sh
+   git tag v0.8.0
+   git push origin v0.8.0
+   ```
+
+zip はローカルでも `npm run package` で `dist/` に作成できる。同梱するのは拡張機能の実行に必要なファイルのみ（`scripts/package.sh` の `FILES`）。
+
 ## ライセンス
 
 MIT
